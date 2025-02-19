@@ -98,6 +98,9 @@ def main(argv=None):
             # Allow "path", "path1", "path2", etc.
             if key.startswith('path') and key[4:] == '' or key[4:].isdigit():
                 watch['paths'].append(value)
+        # Raise for empty paths.
+        if not watch['paths']:
+            raise ValueError('Empty paths.')
         watches.append(watch)
 
     # Test all watches for alerts.
