@@ -71,9 +71,11 @@ def main(argv=None):
     cp.read(config_filenames)
 
     # SMTP configuration.
-    smtp_config = dict()
-    if 'smtp' in cp:
-        smtp_config.update(cp['smtp'])
+    smtp_config = dict(cp['smtp'])
+
+    # Test SMTP
+    with smtplib.SMTP(**smtp_config) as smtp:
+        pass
 
     # Email templates from configuration.
     emails = {key: cp['email.' + key] for key in human_split(cp['email']['keys'])}
