@@ -86,6 +86,7 @@ def main(argv=None):
     # Construct all watches from configuration.
     watches = []
     for section in watcher_sections:
+        # Create and append a watch.
         func_expr = section['func']
         func = eval('lambda path: ' + func_expr)
         watch = dict(
@@ -94,6 +95,7 @@ def main(argv=None):
             func = func,
             email_key = section['email'],
         )
+        # Add paths from section.
         for key, value in section.items():
             # Allow "path", "path1", "path2", etc.
             if key.startswith('path') and key[4:] == '' or key[4:].isdigit():
@@ -103,7 +105,7 @@ def main(argv=None):
             raise ValueError('Empty paths.')
         watches.append(watch)
 
-    # Test all watches for alerts.
+    # Test and alert for all watches.
     for watch in watches:
         # Test each path for alert.
         for path in watch['paths']:
