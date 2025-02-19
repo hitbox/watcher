@@ -99,6 +99,9 @@ def main(argv=None):
         for key, value in section.items():
             # Allow "path", "path1", "path2", etc.
             if key.startswith('path') and key[4:] == '' or key[4:].isdigit():
+                # Raise for not found.
+                if not os.path.exists(value):
+                    raise FileNotFoundError(value)
                 watch['paths'].append(value)
         # Raise for empty paths.
         if not watch['paths']:
