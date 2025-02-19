@@ -9,6 +9,10 @@ from email.message import EmailMessage
 
 instance_config_path = 'instance/watcher.ini'
 
+keys_for_set_contents = set([
+    'body',
+])
+
 class WatcherConfigParser(ConfigParser):
     """
     ConfigParser with ExtendedInterpolation.
@@ -45,8 +49,121 @@ class WatcherPath:
         return self.age_hours / 24
 
 
+def config_filenames_from_args(args):
+    config_filenames = args.config or []
+    if args.instance_config:
+        config_filenames.append(instance_config_path)
+    return config_filenames
+
 def human_split(string):
     return string.replace(',', ' ').split()
+
+def is_prefixed(key, prefix):
+    n = len(prefix)
+    return key.startswith(prefix) and key[n:] == '' or key[n:].isdigit()
+
+def emails_from_config(cp):
+    """
+    Return dict of keyed email templates.
+    """
+    keys = human_split(cp['email']['keys'])
+    emails = {key: cp['email.' + key] for key in keys}
+    return emails
+
+def watches_from_config(cp):
+    """
+    Return a list of watch data.
+    """
+    keys = human_split(cp['watcher']['alerts'])
+    watcher_sections = [cp['alert.' + key] for key in keys]
+    # Construct all watches from configuration.
+    watches = []
+    for section in watcher_sections:
+        # Add paths from section.
+        paths = []
+        for key, value in section.items():
+            # Allow "path", "path1", "path2", etc.
+            if is_prefixed(key, 'path'):
+                paths.append(value)
+        # Create and append a watch.
+        func_expr = section['func']
+        func = eval('lambda path: ' + func_expr)
+        email_key = section['email']
+        watch = dict(
+            func_expr = func_expr,
+            paths = paths,
+            func = func,
+            email_key = email_key,
+        )
+        watches.append(watch)
+    return watches
+
+def raise_for_sanity(emails, watches):
+    """
+    Check the sanity of objects created from config.
+    """
+    # Raise for missing email keys.
+    for watch in watches:
+        email_key = watch['email_key']
+        if email_key not in emails:
+            raise KeyError(f'Invalid email key {email_key}.')
+
+    for watch in watches:
+        # Raise for empty paths.
+        if not watch['paths']:
+            raise ValueError('Empty paths.')
+        # Raise for any path not found.
+        for path in watch['paths']:
+            if not os.path.exists(path):
+                raise FileNotFoundError(path)
+
+def check_and_alert(smtp_config, emails, watches):
+    """
+    Test each watch path against the alert expression and send emails.
+    """
+    for watch in watches:
+        # Test each path for alert.
+        for path in watch['paths']:
+            path = WatcherPath(path)
+            need_alert = watch['func'](path)
+            if need_alert:
+                # Construct email from format strings.
+                email_template = emails[watch['email_key']]
+                email_message = EmailMessage()
+                for key, template in email_template.items():
+                    # Format string.
+                    subs = dict(path=path, func_expr=watch['func_expr'])
+                    string = template.format(**subs)
+                    if key.lower() in keys_for_set_contents:
+                        email_message.set_content(string)
+                    else:
+                        email_message[key] = string
+                # Send email alert.
+                with smtplib.SMTP(**smtp_config) as smtp:
+                    smtp.send_message(email_message)
+
+def run_from_args(args):
+    cp = WatcherConfigParser()
+    cp.read(config_filenames_from_args(args))
+
+    # SMTP configuration.
+    smtp_config = dict(cp['smtp'])
+
+    # Test SMTP
+    with smtplib.SMTP(**smtp_config):
+        pass
+
+    # Email templates from configuration.
+    emails = emails_from_config(cp)
+
+    # Get list of all referenced watcher sections, raising for key errors.
+    watches = watches_from_config(cp)
+
+    # Raise early for sanity.
+    raise_for_sanity(emails, watches)
+
+    # Check and alert for all watches.
+    check_and_alert(smtp_config, emails, watches)
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
@@ -61,75 +178,7 @@ def main(argv=None):
         help = f'Look for config in {instance_config_path}',
     )
     args = parser.parse_args(argv)
-
-    config_filenames = args.config or []
-
-    if args.instance_config:
-        config_filenames.append(instance_config_path)
-
-    cp = WatcherConfigParser()
-    cp.read(config_filenames)
-
-    # SMTP configuration.
-    smtp_config = dict(cp['smtp'])
-
-    # Test SMTP
-    with smtplib.SMTP(**smtp_config) as smtp:
-        pass
-
-    # Email templates from configuration.
-    emails = {key: cp['email.' + key] for key in human_split(cp['email']['keys'])}
-
-    # Get list of all referenced watcher sections, raising for key errors.
-    watcher_sections = [cp['alert.' + key] for key in human_split(cp['watcher']['alerts'])]
-
-    # Construct all watches from configuration.
-    watches = []
-    for section in watcher_sections:
-        # Create and append a watch.
-        func_expr = section['func']
-        func = eval('lambda path: ' + func_expr)
-        watch = dict(
-            func_expr = func_expr,
-            paths = [],
-            func = func,
-            email_key = section['email'],
-        )
-        # Add paths from section.
-        for key, value in section.items():
-            # Allow "path", "path1", "path2", etc.
-            if key.startswith('path') and key[4:] == '' or key[4:].isdigit():
-                # Raise for not found.
-                if not os.path.exists(value):
-                    raise FileNotFoundError(value)
-                watch['paths'].append(value)
-        # Raise for empty paths.
-        if not watch['paths']:
-            raise ValueError('Empty paths.')
-        watches.append(watch)
-
-    # Test and alert for all watches.
-    for watch in watches:
-        # Test each path for alert.
-        for path in watch['paths']:
-            path = WatcherPath(path)
-            need_alert = watch['func'](path)
-            if need_alert:
-                # Construct email from format strings.
-                email_template = emails[watch['email_key']]
-                email_message = EmailMessage()
-                for key, template in email_template.items():
-                    # Format string.
-                    subs = dict(path=path, func_expr=watch['func_expr'])
-                    string = template.format(**subs)
-                    if key.lower() == 'body':
-                        email_message.set_content(string)
-                    else:
-                        email_message[key] = string
-
-                # Send email alert.
-                with smtplib.SMTP(**smtp_config) as smtp:
-                    smtp.send_message(email_message)
+    run_from_args(args)
 
 if __name__ == '__main__':
     main()
