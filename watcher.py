@@ -115,7 +115,8 @@ def main(argv=None):
                 email_message = EmailMessage()
                 for key, template in email_template.items():
                     # Format string.
-                    string = template.format(path=path, **watch)
+                    subs = dict(path=path, func_expr=watch['func_expr'])
+                    string = template.format(**subs)
                     if key.lower() == 'body':
                         email_message.set_content(string)
                     else:
