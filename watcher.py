@@ -1,8 +1,12 @@
 import argparse
+import logging.config
 import os
+import pickle
 import smtplib
 import time
+import unittest
 
+from collections import namedtuple
 from configparser import ConfigParser
 from configparser import ExtendedInterpolation
 from email.message import EmailMessage
@@ -12,6 +16,33 @@ instance_config_path = 'instance/watcher.ini'
 keys_for_set_contents = set([
     'body',
 ])
+
+class TestWatcherArchive(unittest.TestCase):
+
+    def test_no_last(self):
+        archive = WatcherArchive({}, 'test_watch_name', '/fake/path/to/archive')
+        self.assertEqual(archive.last_alert_time, 0)
+
+    def test_last_alert_time(self):
+        name = 'test_watch_name'
+        path = '/fake/path/to/archive'
+        key = (name, path)
+        archive = WatcherArchive({key: 1}, name, path)
+        self.assertEqual(archive.last_alert_time, 1)
+
+
+class TestMisc(unittest.TestCase):
+
+    def test_human_split(self):
+        self.assertEqual(human_split(''), [])
+        self.assertEqual(human_split('alert_name'), ['alert_name'])
+        self.assertEqual(human_split('alert1 alert2'), ['alert1', 'alert2'])
+        self.assertEqual(human_split('alert1, alert2'), ['alert1', 'alert2'])
+
+    def test_is_prefixed(self):
+        self.assertTrue(is_prefixed('path', 'path'))
+        self.assertTrue(is_prefixed('path1', 'path'))
+
 
 class WatcherConfigParser(ConfigParser):
     """
@@ -31,10 +62,11 @@ class WatcherPath:
 
     def __init__(self, path):
         self.path = path
+        self.stat = os.stat(self.path)
 
     @property
     def age_seconds(self):
-        return time.time() - os.path.getmtime(self.path)
+        return time.time() - self.stat.st_mtime
 
     @property
     def age_minutes(self):
@@ -47,6 +79,38 @@ class WatcherPath:
     @property
     def age_days(self):
         return self.age_hours / 24
+
+
+WatcherArchiveBase = namedtuple(
+    'WatcherArchiveBase',
+    ['archive', 'watch_name', 'path'],
+)
+
+class WatcherArchive(WatcherArchiveBase):
+
+    @property
+    def last_alert_time(self):
+        key = (self.watch_name, self.path)
+        if key in self.archive:
+            return self.archive[key]
+        else:
+            return 0
+
+    @property
+    def last_alert_age_seconds(self):
+        return time.time() - self.last_alert_time
+
+    @property
+    def last_alert_age_minutes(self):
+        return self.last_alert_age_seconds / 60
+
+    @property
+    def last_alert_age_hours(self):
+        return self.last_alert_age_minutes / 60
+
+    @property
+    def last_alert_age_days(self):
+        return self.last_alert_age_hours / 24
 
 
 def config_filenames_from_args(args):
@@ -72,13 +136,14 @@ def emails_from_config(cp):
 
 def watches_from_config(cp):
     """
-    Return a list of watch data.
+    Return dict of named watches.
     """
-    keys = human_split(cp['watcher']['alerts'])
-    watcher_sections = [cp['alert.' + key] for key in keys]
-    # Construct all watches from configuration.
-    watches = []
-    for section in watcher_sections:
+    watches = {}
+    for watch_name in human_split(cp['watcher']['alerts']):
+        # Raise for duplicate keys in string list.
+        if watch_name in watches:
+            raise KeyError(f'Duplicate key {watch_name}')
+        section = cp['alert.' + watch_name]
         # Add paths from section.
         paths = []
         for key, value in section.items():
@@ -87,15 +152,12 @@ def watches_from_config(cp):
                 paths.append(value)
         # Create and append a watch.
         func_expr = section['func']
-        func = eval('lambda path: ' + func_expr)
         email_key = section['email']
-        watch = dict(
+        watches[watch_name] = dict(
             func_expr = func_expr,
             paths = paths,
-            func = func,
             email_key = email_key,
         )
-        watches.append(watch)
     return watches
 
 def raise_for_sanity(emails, watches):
@@ -103,12 +165,12 @@ def raise_for_sanity(emails, watches):
     Check the sanity of objects created from config.
     """
     # Raise for missing email keys.
-    for watch in watches:
+    for watch in watches.values():
         email_key = watch['email_key']
         if email_key not in emails:
             raise KeyError(f'Invalid email key {email_key}.')
 
-    for watch in watches:
+    for watch in watches.values():
         # Raise for empty paths.
         if not watch['paths']:
             raise ValueError('Empty paths.')
@@ -117,41 +179,97 @@ def raise_for_sanity(emails, watches):
             if not os.path.exists(path):
                 raise FileNotFoundError(path)
 
-def check_and_alert(smtp_config, emails, watches):
+def update_last_alert(watch_name, path, archive):
+    """
+    Save the last alerted time by the alert's name from config and the path it
+    alerted for.
+    """
+    archive[(watch_name, path)] = time.time()
+
+def make_email(email_template, substitutions):
+    """
+    :param email_template:
+        Dict of email header keys and format string values.
+    """
+    email_message = EmailMessage()
+    for key, template in email_template.items():
+        # Format string.
+        string = template.format(**substitutions)
+        # Update email message.
+        if key.lower() in keys_for_set_contents:
+            email_message.set_content(string)
+        else:
+            email_message[key] = string
+    return email_message
+
+def check_and_alert(smtp_config, emails, watches, archive):
     """
     Test each watch path against the alert expression and send emails.
     """
-    for watch in watches:
+    logger = logging.getLogger('watcher')
+    for watch_name, watch in watches.items():
         # Test each path for alert.
         for path in watch['paths']:
-            path = WatcherPath(path)
-            need_alert = watch['func'](path)
+            watcher_path = WatcherPath(path)
+            context = dict(
+                path = watcher_path,
+                archive = WatcherArchive(archive, watch_name, path),
+            )
+            try:
+                need_alert = eval(watch['func_expr'], {}, context)
+            except:
+                # Log exception and continue to next path.
+                logger.exception(
+                    'Exception evaluating alert func for %r.', watch_name)
+                continue
             if need_alert:
                 # Construct email from format strings.
                 email_template = emails[watch['email_key']]
-                email_message = EmailMessage()
-                for key, template in email_template.items():
-                    # Format string.
-                    subs = dict(path=path, func_expr=watch['func_expr'])
-                    string = template.format(**subs)
-                    if key.lower() in keys_for_set_contents:
-                        email_message.set_content(string)
-                    else:
-                        email_message[key] = string
+                substitutions = dict(
+                    path = watcher_path,
+                    func_expr = watch['func_expr'],
+                )
+                email_message = make_email(email_template, substitutions)
                 # Send email alert.
                 with smtplib.SMTP(**smtp_config) as smtp:
                     smtp.send_message(email_message)
+                # Update archive last alert time.
+                update_last_alert(watch_name, path, archive)
+                logger.info('alerted for %r', watch_name)
+
+def load_archive(archive_path):
+    if os.path.exists(archive_path) and os.path.getsize(archive_path) > 0:
+        with open(archive_path, 'rb') as archive_file:
+            archive = pickle.load(archive_file)
+    else:
+        archive = {}
+    return archive
+
+def save_archive(archive_path, archive):
+    with open(archive_path, 'wb') as archive_file:
+        pickle.dump(archive, archive_file)
+
+def has_logging(cp):
+    return set(['loggers', 'handlers', 'formatters']).issubset(cp)
+
+def ensure_logging(cp):
+    if has_logging(cp):
+        logging.config.fileConfig(cp)
+    else:
+        logging.basicConfig()
 
 def run_from_args(args):
+    """
+    Run configured alerts.
+    """
     cp = WatcherConfigParser()
     cp.read(config_filenames_from_args(args))
 
+    # Ensure logging is configured somehow.
+    ensure_logging(cp)
+
     # SMTP configuration.
     smtp_config = dict(cp['smtp'])
-
-    # Test SMTP
-    with smtplib.SMTP(**smtp_config):
-        pass
 
     # Email templates from configuration.
     emails = emails_from_config(cp)
@@ -162,11 +280,27 @@ def run_from_args(args):
     # Raise early for sanity.
     raise_for_sanity(emails, watches)
 
-    # Check and alert for all watches.
-    check_and_alert(smtp_config, emails, watches)
+    # Load archive
+    archive_path = cp['watcher']['archive']
+    archive = load_archive(archive_path)
+
+    # Check and alert for all watches. Archive is updated here.
+    check_and_alert(smtp_config, emails, watches, archive)
+
+    # Save archive
+    save_archive(archive_path, archive)
 
 def main(argv=None):
-    parser = argparse.ArgumentParser()
+    """
+    Parse command line arguments and begin run.
+    """
+    # TODO
+    # - tests for this
+    # - commit and push this
+    # - get on crewbrief UserEvents.txt
+    parser = argparse.ArgumentParser(
+        description = 'Alerts from configured expressions for files.',
+    )
     parser.add_argument(
         '--config',
         nargs = '*',
