@@ -294,10 +294,6 @@ def main(argv=None):
     """
     Parse command line arguments and begin run.
     """
-    # TODO
-    # - tests for this
-    # - commit and push this
-    # - get on crewbrief UserEvents.txt
     parser = argparse.ArgumentParser(
         description = 'Alerts from configured expressions for files.',
     )
