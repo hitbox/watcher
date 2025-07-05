@@ -3,19 +3,48 @@ import logging.config
 import os
 import pickle
 import smtplib
+import tempfile
 import time
 import unittest
 
+from abc import ABC
+from abc import abstractmethod
 from collections import namedtuple
 from configparser import ConfigParser
 from configparser import ExtendedInterpolation
 from email.message import EmailMessage
+from functools import cached_property
 
 instance_config_path = 'instance/watcher.ini'
 
 keys_for_set_contents = set([
     'body',
 ])
+
+logger = logging.getLogger('watcher')
+
+class TestTailLines(unittest.TestCase):
+
+    def setUp(self):
+        self.tempfile = tempfile.NamedTemporaryFile(delete=False, mode='w', encoding='utf-8')
+        for i in range(1, 21):
+            self.tempfile.write(f'Line {i}\n')
+        self.tempfile.close()
+        self.filepath = self.tempfile.name
+
+    def tearDown(self):
+        os.unlink(self.filepath)
+
+    def test_tail_5_lines(self):
+        expected = [f'Line {i}' for i in range(16, 21)]
+        result = tail_lines(self.filepath, n=5)
+        self.assertEqual(result, expected)
+
+    def test_tail_zero_lines(self):
+        expected = []
+        result = tail_lines(self.filepath, n=0)
+        self.assertEqual(result, expected)
+
 
 class TestWatcherArchive(unittest.TestCase):
 
@@ -64,21 +93,31 @@ class WatcherPath:
         self.path = path
         self.stat = os.stat(self.path)
 
-    @property
+    @cached_property
     def age_seconds(self):
         return time.time() - self.stat.st_mtime
 
-    @property
+    @cached_property
     def age_minutes(self):
         return self.age_seconds / 60
 
-    @property
+    @cached_property
     def age_hours(self):
         return self.age_minutes / 60
 
-    @property
+    @cached_property
     def age_days(self):
         return self.age_hours / 24
+
+    @cached_property
+    def human_age(self):
+        age_parts = hours_minutes_seconds(self.age_seconds)
+        age_parts = ((part, unit) for part, unit in zip(age_parts, 'hms') if part)
+        return ' '.join(f'{part}{unit}' for part, unit in age_parts)
+
+    @cached_property
+    def tail(self):
+        return '\n'.join(tail_lines(self.path))
 
 
 WatcherArchiveBase = namedtuple(
@@ -96,22 +135,53 @@ class WatcherArchive(WatcherArchiveBase):
         else:
             return 0
 
-    @property
+    @cached_property
     def last_alert_age_seconds(self):
         return time.time() - self.last_alert_time
 
-    @property
+    @cached_property
     def last_alert_age_minutes(self):
         return self.last_alert_age_seconds / 60
 
-    @property
+    @cached_property
     def last_alert_age_hours(self):
         return self.last_alert_age_minutes / 60
 
-    @property
+    @cached_property
     def last_alert_age_days(self):
         return self.last_alert_age_hours / 24
 
+
+def tail_lines(filepath, n=10, block_size=1024):
+    """
+    Return the last n lines of a file.
+    """
+    if n == 0:
+        return []
+
+    with open(filepath, 'rb') as file:
+        # Seek to the end of file.
+        file.seek(0, os.SEEK_END)
+        data = b''
+        lines = []
+        remaining_size = file.tell()
+        while remaining_size > 0 and len(lines) <= n:
+            # Seek back a block or the remaining and read.
+            read_size = min(block_size, remaining_size)
+            file.seek(remaining_size - read_size, os.SEEK_SET)
+            block = file.read(read_size)
+            # Prepend block to data.
+            data = block + data
+            remaining_size -= read_size
+            lines = data.splitlines()
+
+        return [line.decode('utf-8', errors='replace') for line in lines[-n:]]
+
+def hours_minutes_seconds(seconds):
+    seconds = int(seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return (hours, minutes, seconds)
 
 def config_filenames_from_args(args):
     config_filenames = args.config or []
@@ -144,20 +214,23 @@ def watches_from_config(cp):
         if watch_name in watches:
             raise KeyError(f'Duplicate key {watch_name}')
         section = cp['alert.' + watch_name]
+        # Description
+        description = section.get('description', fallback='')
         # Add paths from section.
         paths = []
         for key, value in section.items():
             # Allow "path", "path1", "path2", etc.
             if is_prefixed(key, 'path'):
-                paths.append(value)
+                paths.append(os.path.normpath(value))
         # Create and append a watch.
         func_expr = section['func']
         email_key = section['email']
-        watches[watch_name] = dict(
-            func_expr = func_expr,
-            paths = paths,
-            email_key = email_key,
-        )
+        watches[watch_name] = {
+            'description': description,
+            'func_expr': func_expr,
+            'paths': paths,
+            'email_key': email_key,
+        }
     return watches
 
 def raise_for_sanity(emails, watches):
@@ -206,7 +279,6 @@ def check_and_alert(smtp_config, emails, watches, archive):
     """
     Test each watch path against the alert expression and send emails.
     """
-    logger = logging.getLogger('watcher')
     for watch_name, watch in watches.items():
         # Test each path for alert.
         for path in watch['paths']:
@@ -217,7 +289,7 @@ def check_and_alert(smtp_config, emails, watches, archive):
             )
             try:
                 need_alert = eval(watch['func_expr'], {}, context)
-            except:
+            except Exception:
                 # Log exception and continue to next path.
                 logger.exception(
                     'Exception evaluating alert func for %r.', watch_name)
@@ -228,6 +300,7 @@ def check_and_alert(smtp_config, emails, watches, archive):
                 substitutions = dict(
                     path = watcher_path,
                     func_expr = watch['func_expr'],
+                    description = watch['description'],
                 )
                 email_message = make_email(email_template, substitutions)
                 # Send email alert.
