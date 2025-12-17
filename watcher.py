@@ -216,7 +216,7 @@ def watches_from_config(cp):
         section = cp['alert.' + watch_name]
         # Description
         description = section.get('description', fallback='')
-        # Add paths from section.
+        # Normalize paths from section.
         paths = []
         for key, value in section.items():
             # Allow "path", "path1", "path2", etc.
@@ -225,12 +225,13 @@ def watches_from_config(cp):
         # Create and append a watch.
         func_expr = section['func']
         email_key = section['email']
-        watches[watch_name] = {
+        watch_data = {
             'description': description,
             'func_expr': func_expr,
             'paths': paths,
             'email_key': email_key,
         }
+        watches[watch_name] = watch_data
     return watches
 
 def raise_for_sanity(emails, watches):
@@ -275,10 +276,12 @@ def make_email(email_template, substitutions):
             email_message[key] = string
     return email_message
 
-def check_and_alert(smtp_config, emails, watches, archive):
+def check_and_alert(smtp_config, emails, watches, archive, force_names=None):
     """
     Test each watch path against the alert expression and send emails.
     """
+    if force_names is None:
+        force_names = set()
     for watch_name, watch in watches.items():
         # Test each path for alert.
         for path in watch['paths']:
@@ -288,7 +291,10 @@ def check_and_alert(smtp_config, emails, watches, archive):
                 archive = WatcherArchive(archive, watch_name, path),
             )
             try:
+                logger.info('checking %s', path)
                 need_alert = eval(watch['func_expr'], {}, context)
+                if watch_name in force_names:
+                    need_alert = True
             except Exception:
                 # Log exception and continue to next path.
                 logger.exception(
@@ -302,6 +308,8 @@ def check_and_alert(smtp_config, emails, watches, archive):
                     func_expr = watch['func_expr'],
                     description = watch['description'],
                 )
+                substitutions.update(watch)
+                print(substitutions)
                 email_message = make_email(email_template, substitutions)
                 # Send email alert.
                 with smtplib.SMTP(**smtp_config) as smtp:
@@ -358,15 +366,12 @@ def run_from_args(args):
     archive = load_archive(archive_path)
 
     # Check and alert for all watches. Archive is updated here.
-    check_and_alert(smtp_config, emails, watches, archive)
+    check_and_alert(smtp_config, emails, watches, archive, force_names=set(args.test))
 
     # Save archive
     save_archive(archive_path, archive)
 
-def main(argv=None):
-    """
-    Parse command line arguments and begin run.
-    """
+def argument_parser():
     parser = argparse.ArgumentParser(
         description = 'Alerts from configured expressions for files.',
     )
@@ -380,6 +385,18 @@ def main(argv=None):
         action = 'store_true',
         help = f'Look for config in {instance_config_path}',
     )
+    parser.add_argument(
+        '--test',
+        nargs = '+',
+        help = f'Force emails from given keys.',
+    )
+    return parser
+
+def main(argv=None):
+    """
+    Parse command line arguments and begin run.
+    """
+    parser = argument_parser()
     args = parser.parse_args(argv)
     run_from_args(args)
 
