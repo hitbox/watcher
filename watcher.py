@@ -23,6 +23,9 @@ keys_for_set_contents = set([
 
 logger = logging.getLogger('watcher')
 
+# number of lines for tail
+NTAIL = 10
+
 class TestTailLines(unittest.TestCase):
 
     def setUp(self):
@@ -89,8 +92,9 @@ class WatcherPath:
     Wrap a path in a useful object for the alert functions to use.
     """
 
-    def __init__(self, path):
+    def __init__(self, path, ntail):
         self.path = path
+        self.ntail = ntail
         self.stat = os.stat(self.path)
 
     @cached_property
@@ -122,7 +126,7 @@ class WatcherPath:
 
 WatcherArchiveBase = namedtuple(
     'WatcherArchiveBase',
-    ['archive', 'watch_name', 'path'],
+    ['archive_data', 'watch_name', 'path'],
 )
 
 class WatcherArchive(WatcherArchiveBase):
@@ -130,8 +134,8 @@ class WatcherArchive(WatcherArchiveBase):
     @property
     def last_alert_time(self):
         key = (self.watch_name, self.path)
-        if key in self.archive:
-            return self.archive[key]
+        if key in self.archive_data:
+            return self.archive_data[key]
         else:
             return 0
 
@@ -226,6 +230,7 @@ def watches_from_config(cp):
         func_expr = section['func']
         email_key = section['email']
         watch_data = {
+            'name': watch_name,
             'description': description,
             'func_expr': func_expr,
             'paths': paths,
@@ -253,12 +258,12 @@ def raise_for_sanity(emails, watches):
             if not os.path.exists(path):
                 raise FileNotFoundError(path)
 
-def update_last_alert(watch_name, path, archive):
+def update_last_alert(watch_name, path, archive_watcher):
     """
     Save the last alerted time by the alert's name from config and the path it
     alerted for.
     """
-    archive[(watch_name, path)] = time.time()
+    archive_watcher.archive_data[(watch_name, path)] = time.time()
 
 def make_email(email_template, substitutions):
     """
@@ -266,6 +271,7 @@ def make_email(email_template, substitutions):
         Dict of email header keys and format string values.
     """
     email_message = EmailMessage()
+    # The ini config section keys are direct attributes of email objects.
     for key, template in email_template.items():
         # Format string.
         string = template.format(**substitutions)
@@ -276,7 +282,7 @@ def make_email(email_template, substitutions):
             email_message[key] = string
     return email_message
 
-def check_and_alert(smtp_config, emails, watches, archive, force_names=None):
+def check_and_alert(smtp_config, emails, watches, archive_data, force_names=None):
     """
     Test each watch path against the alert expression and send emails.
     """
@@ -285,11 +291,13 @@ def check_and_alert(smtp_config, emails, watches, archive, force_names=None):
     for watch_name, watch in watches.items():
         # Test each path for alert.
         for path in watch['paths']:
-            watcher_path = WatcherPath(path)
-            context = dict(
-                path = watcher_path,
-                archive = WatcherArchive(archive, watch_name, path),
-            )
+            # Wrap path and archive for convenient attributes
+            watcher_path = WatcherPath(path, NTAIL)
+            watcher_archive = WatcherArchive(archive_data, watch_name, path)
+            context = {
+                'path': watcher_path,
+                'archive': watcher_archive,
+            }
             try:
                 logger.info('checking %s', path)
                 need_alert = eval(watch['func_expr'], {}, context)
@@ -309,13 +317,12 @@ def check_and_alert(smtp_config, emails, watches, archive, force_names=None):
                     description = watch['description'],
                 )
                 substitutions.update(watch)
-                print(substitutions)
                 email_message = make_email(email_template, substitutions)
                 # Send email alert.
                 with smtplib.SMTP(**smtp_config) as smtp:
                     smtp.send_message(email_message)
                 # Update archive last alert time.
-                update_last_alert(watch_name, path, archive)
+                update_last_alert(watch_name, path, watcher_archive)
                 logger.info('alerted for %r', watch_name)
 
 def load_archive(archive_path):
@@ -366,7 +373,7 @@ def run_from_args(args):
     archive = load_archive(archive_path)
 
     # Check and alert for all watches. Archive is updated here.
-    check_and_alert(smtp_config, emails, watches, archive, force_names=set(args.test))
+    check_and_alert(smtp_config, emails, watches, archive, force_names=set(args.test or []))
 
     # Save archive
     save_archive(archive_path, archive)
@@ -398,7 +405,10 @@ def main(argv=None):
     """
     parser = argument_parser()
     args = parser.parse_args(argv)
-    run_from_args(args)
+    try:
+        run_from_args(args)
+    except Exception as e:
+        logger.exception('An exception occurred')
 
 if __name__ == '__main__':
     main()
