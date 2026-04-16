@@ -1,1 +1,5 @@
-psutil
+flask
+flask-sqlalchemy
+psycopg
+sqlalchemy
+wtforms

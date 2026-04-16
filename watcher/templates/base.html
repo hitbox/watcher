@@ -1,0 +1,29 @@
+<!doctype html>
+<html translate="no">{% set title = 'Watcher' %}
+    <head>{% block head %}
+        <title>{{ title }}</title>
+        <meta name=google content=notranslate>
+        <meta name=viewport content="width=device-width, initial-scale=1.0">
+        <link rel="icon" href="data:,">
+        <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
+        <script src="{{ url_for('static', filename='site.js') }}"></script>
+    {% endblock %}</head>
+    <body>{% block body %}
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flashes-container">
+                    <ul class="flashes">{% for category, message in messages %}
+                        <li class="flash flash-{{ category }}">{{ message }}</li>
+                    {% endfor %}</ul>
+                </div>
+            {% endif %}
+        {% endwith %}
+        <div id=main-container>
+            <main>
+                <h1>Watcher</h1>
+                <p>Collect statistics on paths and alert for conditions.</p>
+                {% block main %}{% endblock main %}
+            </main>
+        </div>
+    {% endblock body %}</body>
+</html>
