@@ -1,5 +1,8 @@
+concurrent-log-handler
 flask
 flask-sqlalchemy
+humanize
 psycopg
 sqlalchemy
+waitress
 wtforms

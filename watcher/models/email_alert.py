@@ -13,7 +13,7 @@ from watcher.extension import db
 
 from .alert import Alert
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 class EmailAlert(Alert):
 
@@ -31,19 +31,41 @@ class EmailAlert(Alert):
 
     from_address = db.Column(
         db.String,
-        nullable = False,
+        nullable = True,
     )
 
     subject_template = db.Column(
         db.String,
-        nullable = False,
-        comment = 'Format string with attributes from Path objects',
+        nullable = True,
+        comment =
+            'Format string with attributes from Path objects. Fallback to'
+            ' email_template for None',
     )
-    
+
     body_template = db.Column(
         db.Text,
-        nullable = False,
-        comment = 'Format string with attributes from Path objects',
+        nullable = True,
+        comment =
+            'Format string with attributes from Path objects. Fallback to'
+            ' email_template for None.',
+    )
+
+    is_important = db.Column(
+        db.Boolean,
+        nullable = True,
+        comment =
+            'Flag to send email with the very-important header. Fallback to'
+            ' email_template for None.',
+    )
+
+    email_template_id = db.Column(
+        db.UUID(as_uuid=True),
+        db.ForeignKey('email_template.id')
+    )
+
+    email_template = db.relationship(
+        'EmailTemplate',
+        back_populates = 'email_alerts',
     )
 
     __valid_names__ = {
@@ -99,25 +121,34 @@ class EmailAlert(Alert):
     recipients = db.relationship(
         'EmailRecipient',
         back_populates = 'alert',
+        cascade = 'all, delete-orphan',
     )
 
     def render(self, template, path):
-        return template.format(
-            pathobj = path,
-            now = datetime.now(),
-            alert = self,
-        )
+        context = {
+            'pathobj': path,
+            'now': datetime.now(),
+            'alert': self,
+        }
+        return template.format(**context)
 
     def do_alert(self, path_object):
         msg = EmailMessage()
 
-        subject = self.render(self.subject_template, path_object)
-        body = self.render(self.body_template, path_object)
+        subject_template = self.subject_template or self.email_template.subject_template
+        body_template = self.body_template or self.email_template.body_template
+
+        subject = self.render(subject_template, path_object)
+        body = self.render(body_template, path_object)
 
         msg["Subject"] = subject
-        msg["From"] = self.from_address
+        msg["From"] = self.from_address or self.email_template.from_address
 
-        recipients = [r.address for r in self.recipients]
+        if self.recipients:
+            recipients = [r.address for r in self.recipients]
+        elif self.email_template.recipients:
+            recipients = [r.address for r in self.email_template.recipients]
+
         to_addresses = ', '.join(recipients)
         msg["To"] = to_addresses
 
@@ -128,9 +159,10 @@ class EmailAlert(Alert):
         smtp_port = current_app.config.get('SMTP_PORT')
         if smtp_port is not None:
             args.append(smtp_port)
+        logger.info('SMTP args=%s', args)
         with smtplib.SMTP(*args) as smtp:
             smtp.send_message(msg)
 
         # Update last alert time.
         self.last_time = time.time()
-        logger.info('Sent email subject=%r, to=%r', subject, to_addresses)
+        logger.info('Sent email subject=%r, to=%r, from=%s', subject, to_addresses, msg['From'])

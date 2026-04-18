@@ -3,6 +3,10 @@ import os
 import time
 import uuid
 
+from datetime import datetime
+
+import humanize
+
 from watcher.extension import db
 
 class Path(db.Model):
@@ -66,8 +70,36 @@ class Path(db.Model):
         return '\n'.join(lines)
 
     @property
+    def mtime_datetime(self):
+        return datetime.fromtimestamp(self.mtime)
+
+    @property
     def mtime_age(self):
         return time.time() - self.mtime
+
+    @property
+    def mtime_age_timedelta(self):
+        """
+        mtime age as datetime.timedelta
+        """
+        return datetime.now() - datetime.fromtimestamp(self.mtime)
+
+    @property
+    def mtime_hms(self):
+        """
+        mtime age as days, hours, minutes, seconds
+        """
+        days = delta.days
+        hours, rem = divmod(delta.seconds, 3600)
+        minutes, seconds = divmod(rem, 60)
+        return (days, hours, minutes, seconds)
+
+    @property
+    def mtime_human_age(self):
+        """
+        Human-friendly age string.
+        """
+        return humanize.naturaldelta(self.mtime_age_timedelta)
 
     @property
     def last_alert_time(self):
@@ -95,6 +127,9 @@ class Path(db.Model):
         query = db.select(cls).where(cls.path==path)
         instance = db.session.scalars(query).one_or_none()
         return instance
+
+    def as_html(self):
+        return f'<span class="path">{self.path}</span>'
 
     @classmethod
     def update_or_create(cls, path):

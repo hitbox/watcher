@@ -2,6 +2,8 @@ import logging
 import operator as operator_lib
 import uuid
 
+from markupsafe import Markup
+
 from watcher.extension import db
 
 from .condition_node import ConditionNode
@@ -62,6 +64,15 @@ class ConditionLeaf(ConditionNode):
         'ge': operator_lib.ge,
     }
 
+    __symbols__ = {
+        'eq': '==',
+        'ne': '!=',
+        'lt': '<',
+        'gt': '>',
+        'le': '<=',
+        'ge': '>=',
+    }
+
     @db.validates('operator')
     def validate_operator(self, name, value):
         if value not in self.__operators__:
@@ -97,9 +108,20 @@ class ConditionLeaf(ConditionNode):
         return self.__value_types__[self.value_type](self.value)
 
     def as_string(self):
-        operator = self.operator_func()
+        symbol = self.__symbols__[self.operator]
         condition_value = self.typed_value()
-        return f'{self.operator}(Path.{self.field}, {condition_value})'
+        return f'(Path.{self.field} {symbol} {condition_value})'
+
+    def as_html(self):
+        symbol = self.__symbols__[self.operator]
+        condition_value = self.typed_value()
+        return Markup(
+            f'<span class="paren">(</span>'
+            f'<span class="field">Path.{self.field}</span>'
+            f'<span class="op">{symbol}</span>'
+            f'<span class="value">{condition_value}</span>'
+            f'<span class="paren">)</span>'
+        )
 
     def __str__(self):
         return self.as_string()
@@ -108,5 +130,5 @@ class ConditionLeaf(ConditionNode):
         path_field_value = getattr(path, self.field)
         operator = self.operator_func()
         condition_value = self.typed_value()
-        logger.info(f'{operator}({path_field_value}, {condition_value})')
+        logger.info(self.as_string())
         return operator(path_field_value, condition_value)

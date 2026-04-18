@@ -4,4 +4,5 @@ from .condition_leaf import ConditionLeaf
 from .condition_node import ConditionNode
 from .email_alert import EmailAlert
 from .email_recipient import EmailRecipient
+from .email_template import EmailTemplate
 from .path import Path

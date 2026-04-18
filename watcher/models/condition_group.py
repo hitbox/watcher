@@ -2,6 +2,8 @@ import uuid
 import logging
 import operator
 
+from markupsafe import Markup
+
 from watcher.extension import db
 
 from .condition_node import ConditionNode
@@ -39,12 +41,23 @@ class ConditionGroup(ConditionNode):
         return value
 
     def as_string(self):
-        childs = ', '.join(child.as_string() for child in self.children)
+        childs = (child.as_string() for child in self.children)
         if self.logical_operator == 'and':
-            result = f'all([{childs}])'
+            separator = ' and '
         else:
-            result = f'any([{childs}])'
-        return result
+            separator = ' or '
+        return separator.join(childs)
+
+    def __str__(self):
+        return self.as_string()
+
+    def as_html(self):
+        childs = (child.as_html() for child in self.children)
+        if self.logical_operator == 'and':
+            separator = ' <span class="logic">and</span> '
+        else:
+            separator = ' <span class="logic">or</span> '
+        return Markup(f'<span class="expr">{separator.join(childs)}</span>')
 
     def test_path(self, path_object, alert):
         # generator to allow short-circuit

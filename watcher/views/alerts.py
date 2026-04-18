@@ -10,17 +10,17 @@ from watcher.models import Alert
 alerts_bp = Blueprint('alerts', __name__)
 
 def unordered_list_of_paths(paths):
-    return unordered_list([path.path for path in paths])
+    return unordered_list([path.as_html() for path in paths])
 
-def condition_as_string(condition):
-    return condition.as_string()
+def condition_as_html(condition):
+    return condition.as_html()
 
 alerts_table = Table(
     columns = [
         TableColumn('Name', 'name'),
         TableColumn('Description', 'description'),
         TableColumn('Paths', 'paths', cast=unordered_list_of_paths),
-        TableColumn('Conditions', 'root_condition', cast=condition_as_string),
+        TableColumn('Conditions', 'root_condition', cast=condition_as_html),
     ],
     model = Alert,
 )

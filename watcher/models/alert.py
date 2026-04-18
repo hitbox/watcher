@@ -5,7 +5,7 @@ import uuid
 
 from watcher.extension import db
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 class Alert(db.Model):
 
@@ -20,6 +20,12 @@ class Alert(db.Model):
         db.UUID(as_uuid=True),
         primary_key = True,
         default = uuid.uuid4,
+    )
+
+    active = db.Column(
+        db.Boolean,
+        nullable = False,
+        default = True,
     )
 
     type = db.Column(
@@ -47,6 +53,9 @@ class Alert(db.Model):
 
     @property
     def normal_last_time(self):
+        """
+        Normalized last alert time such that None appears as infinity ago.
+        """
         if self.last_time is None:
             return -math.inf
         return self.last_time
