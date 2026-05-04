@@ -17,6 +17,7 @@ def condition_as_html(condition):
 
 alerts_table = Table(
     columns = [
+        TableColumn('Active', 'active'),
         TableColumn('Name', 'name'),
         TableColumn('Description', 'description'),
         TableColumn('Paths', 'paths', cast=unordered_list_of_paths),
