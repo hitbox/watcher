@@ -60,7 +60,7 @@ def main(argv=None):
                 if eval(alert['alert'], locals=task):
                     alerts_for_tasks.append({'alert': alert, 'task': task})
 
-    # If any failed conditions, build and send an email.
+    # If any failed conditions, build and send an emails.
     if alerts_for_tasks:
         logger.info("%s alerts generated", len(alerts_for_tasks))
         if len(alerts_for_tasks) > 1:
@@ -74,6 +74,7 @@ def main(argv=None):
             task = alert_data['task']
             body.append(f'"{task["TaskName"]}" alerted for condition "{alert["alert"]}"')
 
+        # Send email for alert condition.
         msg = EmailMessage()
         for key, value in email_config.items():
             msg[key] = value
