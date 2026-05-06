@@ -56,7 +56,9 @@ def main(argv=None):
     for task in get_tasks():
         task = {key.replace(' ', '_'): value for key, value in task.items()}
         for alert_name, alert in alerts.items():
+            # select task condition for consideration of alert
             if eval(alert['select'], locals=task):
+                # test alert condition for selected
                 if eval(alert['alert'], locals=task):
                     alerts_for_tasks.append({'alert': alert, 'task': task})
 
@@ -72,7 +74,7 @@ def main(argv=None):
             body.append('-' * 3)
             alert = alert_data['alert']
             task = alert_data['task']
-            body.append(f'"{task["TaskName"]}" alerted for condition "{alert["alert"]}"')
+            body.append(f'"{task["TaskName"]}" alerted for condition "{alert["alert"]}" for data: {task}')
 
         # Send email for alert condition.
         msg = EmailMessage()
