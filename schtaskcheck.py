@@ -4,6 +4,7 @@ import csv
 import ctypes
 import io
 import logging.config
+import re
 import smtplib
 import subprocess
 
@@ -11,6 +12,9 @@ from email.message import EmailMessage
 from pprint import pprint
 
 def get_uptime_seconds():
+    """
+    Host uptime in seconds.
+    """
     return ctypes.windll.kernel32.GetTickCount64() / 1000
 
 def get_tasks():
@@ -21,69 +25,114 @@ def get_tasks():
         check=True
     )
     reader = csv.DictReader(io.StringIO(result.stdout))
-    yield from reader
+    # Yield rows ignoring repeated field names.
+    for row in reader:
+        if set(row.values()) != set(reader.fieldnames):
+            yield row
 
 def main(argv=None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('config')
+    """
+    List scheduled tasks.
+    """
+    parser = argparse.ArgumentParser(
+        description= main.__doc__,
+    )
+    #parser.add_argument('config')
+    parser.add_argument('output', help='CSV output filename.')
+    parser.add_argument('--name', help='Regex pattern for TaskName to include')
+    parser.add_argument('--status', help='Regex pattern for Status to include')
+    parser.add_argument('--author')
+    parser.add_argument('--ignore-name', action='append', help='Regex pattern for TaskName to ignore.')
+    parser.add_argument('--ignore-status', action='append', help='Regex pattern for Status to ignore.')
+    parser.add_argument('--not-disabled', action='store_true', help='Exclude Disabled tasks.')
     args = parser.parse_args(argv)
 
-    cp = configparser.ConfigParser()
-    cp.read(args.config)
+    include_disabled = not args.not_disabled
 
-    if set(['loggers', 'handlers', 'formatters']).issubset(cp.keys()):
-        logging.config.fileConfig(cp)
+    affirm_regexes = {
+        'Status': [],
+        'TaskName': [],
+        'Author': [],
+    }
 
-    logger = logging.getLogger('schtaskcheck')
+    ignore_regexes = {
+        'Status': [],
+        'TaskName': [],
+    }
 
-    uptime_seconds = int(cp['schtasks'].get('uptime_seconds', '0'))
-    if get_uptime_seconds() <= uptime_seconds:
-        return
+    items = [
+        (args.ignore_name, 'TaskName'),
+        (args.ignore_status, 'Status'),
+    ]
+    for option, key in items:
+        if option:
+            for ignore_pattern in option:
+                regex = re.compile(ignore_pattern)
+                ignore_regexes[key].append(regex)
 
-    smtp_config = dict(cp['smtp'])
-    email_config = dict(cp['email_message'])
+    items = [
+        (args.name, 'TaskName'),
+        (args.status, 'Status'),
+        (args.author, 'Author'),
+    ]
+    for option, key in items:
+        if option:
+            for affirm_pattern in option:
+                regex = re.compile(affirm_pattern)
+                affirm_regexes[key].append(regex)
 
-    alerts = {}
-    for suffix in cp['schtasks']['alerts'].split():
-        alert = dict(cp[f'alert.{suffix}'])
-        assert set(alerts.keys()).issubset(['select'])
-        alerts[suffix] = alert
+    anything_pattern = '.*'
+    if args.name:
+        name_regex = re.compile(args.name)
+    else:
+        name_regex = re.compile(anything_pattern)
 
-    # Loop through all tasks checking all conditions against them, saving those
-    # that fail.
-    logger.info("checking scheduled tasks' conditions")
-    alerts_for_tasks = []
+    if args.author:
+        author_regex = re.compile(args.author)
+    else:
+        author_regex = re.compile(anything_pattern)
+
+    if args.status:
+        status_regex = re.compile(args.status)
+    else:
+        status_regex = re.compile(anything_pattern)
+
+    matches = []
     for task in get_tasks():
-        task = {key.replace(' ', '_'): value for key, value in task.items()}
-        for alert_name, alert in alerts.items():
-            # select task condition for consideration of alert
-            if eval(alert['select'], locals=task):
-                # test alert condition for selected
-                if eval(alert['alert'], locals=task):
-                    alerts_for_tasks.append({'alert': alert, 'task': task})
+        is_disabled = task['Status'] == 'Disabled'
+        if args.not_disabled and is_disabled:
+            continue
 
-    # If any failed conditions, build and send an emails.
-    if alerts_for_tasks:
-        logger.info("%s alerts generated", len(alerts_for_tasks))
-        if len(alerts_for_tasks) > 1:
-            body = ['Alerts for scheduled tasks']
-        else:
-            body = ['Alert for scheduled task']
+        # Skip if any ignore regexes match.
+        skip_for_ignore = False
+        for task_key, regexes in ignore_regexes.items():
+            if any(regex.match(task[task_key]) for regex in regexes):
+                skip_for_ignore = True
+                break
+        if skip_for_ignore:
+            continue
 
-        for alert_data in alerts_for_tasks:
-            body.append('-' * 3)
-            alert = alert_data['alert']
-            task = alert_data['task']
-            body.append(f'"{task["TaskName"]}" alerted for condition "{alert["alert"]}" for data: {task}')
+        # Skip if no affirmative patterns match.
+        skip_for_ignore = False
+        for task_key, regexes in ignore_regexes.items():
+            if any(regex.match(task[task_key]) for regex in regexes):
+                skip_for_ignore = True
+                break
+        if skip_for_ignore:
+            continue
 
-        # Send email for alert condition.
-        msg = EmailMessage()
-        for key, value in email_config.items():
-            msg[key] = value
-        msg.set_content('\n'.join(body))
-        with smtplib.SMTP(**smtp_config) as smtp:
-            smtp.send_message(msg)
-            logger.info('email sent')
+
+        matches.append(task)
+
+    if matches:
+        first_task = matches[0]
+        with open(args.output, 'w', newline='', encoding='utf8') as output_file:
+            priortity = {'TaskName': 0, 'Comment': 1, 'Author': 2}
+            fieldnames = sorted(first_task.keys(), key=lambda x: priortity.get(x, 99))
+            writer = csv.DictWriter(output_file, fieldnames=fieldnames)
+            writer.writeheader()
+            for task in matches:
+                writer.writerow(task)
 
 if __name__ == '__main__':
     main()
