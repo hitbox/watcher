@@ -4,6 +4,9 @@ import operator
 from watcher.extension import db
 
 class ConditionNode(db.Model):
+    """
+    Base for a condition group or leaf.
+    """
 
     __tablename__ = 'condition_node'
 
