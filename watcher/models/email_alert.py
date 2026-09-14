@@ -93,6 +93,14 @@ class EmailAlert(Alert):
 
     @db.validates('subject_template', 'body_template')
     def validate_template_fields(self, key, format_string):
+        """
+        Validate field names inside the template string.
+
+        The root field name must be defined in ``__valid_names__``. Field
+        attributes may be accessed one level deep. A value of ``None`` for a
+        field's allowed attributes permits any attribute; otherwise, the
+        attribute must be present in the corresponding set.
+        """
         formatter = string.Formatter()
 
         parsed = formatter.parse(format_string)
