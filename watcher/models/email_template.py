@@ -29,6 +29,11 @@ class EmailTemplate(db.Model):
         default = uuid.uuid4,
     )
 
+    name = db.Column(
+        db.String,
+        unique = True,
+    )
+
     from_address = db.Column(
         db.String,
         nullable = False,

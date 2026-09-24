@@ -1,254 +1,41 @@
-:root
-{
-    --expr-gap: 0.3ch;
-}
-
-html
-{
-    box-sizing: border-box;
-}
-
-*, *:before, *:after
-{
-    box-sizing: inherit;
-}
-
-body
-{
-    font-family: sans-serif;
-}
-
-@media (prefers-color-scheme: dark)
-{
-    body
-    {
-        background-color: #1e1e1e;
-        color: white;
-    }
-}
-
-#main-container
-{
-    display: flex;
-    justify-content: center;
-    margin-bottom: 50vh;
-}
-
-.pagination-container
-{
-    margin-top: 4px;
-    margin-bottom: 4px;
-    display: flex;
-}
-
-.pagination-container > *
-{
-    flex: 1;
-}
-
-.form-container.sort-and-filter
-{
-    display: flex;
-}
-
-a:link
-{
-    color: red;
-}
-
-a:visited
-{
-    color: green;
-}
-
-a:hover
-{
-    color: hotpink;
-}
-
-a:active
-{
-    color: white;
-}
-
-[data-href]:hover
-{
-    cursor: pointer;
-    background-color: #111;
-}
-
-ul
-{
+ul.flashes li {
     list-style-type: none;
-    margin: 0;
-    padding: 0;
 }
 
-.flash-messages
-{
-    list-style: none;
+.flashes {
     padding: 0;
     margin: 1rem 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
 }
 
-.flash
-{
+.flash {
     padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid;
     border-radius: 0.375rem;
-    border: 1px solid transparent;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 0.95rem;
-    line-height: 1.4;
-    color: white;
 }
 
-.flash.flash-success
-{
-    background-color: seagreen;
+.flash-success {
+    color: darkgreen;
+    background-color: lightgreen;
+    border-color: green;
 }
 
-.flash.flash-error
-{
-    background-color: crimson;
+.flash-error {
+    color: darkred;
+    background-color: mistyrose;
+    border-color: red;
 }
 
-.flash.flash-warning
-{
-    background-color: gold;
+.flash-warning {
+    color: darkgoldenrod;
+    background-color: lightyellow;
+    border-color: goldenrod;
 }
 
-.flash.flash-info
-{
-    background-color: dodgerblue;
-}
-
-.flashes-container
-{
-    display: flex;
-    justify-content: center;
-}
-
-pre
-{
-    font-size: 1rem;
-}
-
-pre.value
-{
-    white-space: pre-wrap;
-    background: #333333;
-    padding: 2px 4px;
-}
-
-pre.value.xml
-{
-    max-height: 70vh;
-    overflow: scroll;
-}
-
-code
-{
-    font-size: 1rem;
-}
-
-.data
-{
-    font-family: monospace;
-    font-size: 1rem;
-}
-
-table
-{
-    border-collapse: collapse;
-    width: 100%;
-}
-
-table, th, td
-{
-    border: 1px solid white;
-}
-
-th, td
-{
-    padding: 0.7rem;
-}
-
-label
-{
-    display: inline-block;
-}
-
-input:not([type=radio]),
-label:not([for ^= "airline_iata_code-"])
-{
-    padding: 0.25rem 0.5rem;
-    width: 100%;
-}
-
-input[type=submit]
-{
-    padding: 0.75rem;
-}
-
-form
-{
-    max-width: 500px;
-}
-
-ul.literal,
-dl.literal,
-dl.literal > dd
-{
-    margin-left: 1rem;
-}
-
-ul.literal > li::after,
-dl.literal > dd::after
-{
-    content: ",";
-}
-
-dl.literal > dt::after
-{
-    content: ":";
-}
-
-dl.key-value
-{
-    display: grid;
-    grid-template-columns: max-content 1fr;
-}
-
-dl.key-value > dt
-{
-    font-weight: 600;
-}
-
-.grid-2
-{
-    display: grid;
-    grid-template-columns: repeat(2, auto);
-    grid-gap: 1rem;
-}
-
-.buttons
-{
-    display: flex;
-    margin-top: 2rem;
-}
-
-ul.errors li
-{
-    background: red;
-    color: white;
-}
-
-.boolean-yes
-{
-    background: green;
+.flash-info {
+    color: darkblue;
+    background-color: lightblue;
+    border-color: blue;
 }
 
 .path
@@ -270,100 +57,7 @@ ul.errors li
     font-size: 1rem;
 }
 
-@media (prefers-color-scheme: dark)
-{
-    body
-    {
-        background-color: #1e1e1e;
-        color: white;
-    }
-
-    .path
-    {
-        background-color: #111;
-        color: lightgreen;
-        border: none;
-    }
-
-    .expr
-    {
-        color: #f0e68c;
-    }
-
-    .expr .field
-    {
-        color: #87ceeb;
-        margin: 0 var(--expr-gap);
-    }
-
-    .expr .op
-    {
-        color: #f4a460;
-        margin: 0 var(--expr-gap);
-    }
-
-    .expr .logic
-    {
-        color: #ffdead;
-        font-weight: bold;
-        margin: 0 var(--expr-gap);
-        letter-spacing: 0.05em;
-    }
-
-    .expr .value
-    {
-        color: #98fb98;
-        margin: 0 var(--expr-gap);
-    }
-
-    .expr .paren
-    {
-        color: #cd853f;
-    }
-}
-
-@media (prefers-color-scheme: light)
-{
-    .path
-    {
-        background-color: #f5f5f5;
-        color: #2f6f3e;
-        border: 1px solid #ddd;
-    }
-
-    .expr
-    {
-        color: #333;
-    }
-
-    .expr .field
-    {
-        color: #1f4e79;
-        margin: 0 var(--expr-gap);
-    }
-
-    .expr .op
-    {
-        color: #8b5a2b;
-        margin: 0 var(--expr-gap);
-    }
-
-    .expr .logic
-    {
-        color: #b8860b;
-        font-weight: bold;
-        margin: 0 var(--expr-gap);
-        letter-spacing: 0.05em;
-    }
-
-    .expr .value
-    {
-        color: #2e8b57;
-        margin: 0 var(--expr-gap);
-    }
-
-    .expr .paren
-    {
-        color: #777;
-    }
+tr[data-href]:hover > td {
+    background-color: var(--pico-primary-hover-background);
+    cursor: pointer;
 }

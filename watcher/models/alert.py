@@ -28,6 +28,13 @@ class Alert(db.Model):
         default = True,
     )
 
+    @property
+    def active_yn(self):
+        if self.active is True:
+            return 'Yes'
+        elif self.active is False:
+            return 'No'
+
     type = db.Column(
         db.String,
         nullable = False,

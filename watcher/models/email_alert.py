@@ -161,6 +161,7 @@ class EmailAlert(Alert):
         msg["To"] = to_addresses
 
         msg.set_content(body)
+        msg.add_alternative(body, subtype='html')
 
         smtp_host = current_app.config['SMTP_HOST']
         args = [smtp_host]

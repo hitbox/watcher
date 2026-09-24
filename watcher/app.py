@@ -5,6 +5,7 @@ from flask import render_template
 from flask import url_for
 
 from . import extension
+from . import renderer
 from . import views
 from .middleware import PrefixMiddleware
 
@@ -14,11 +15,16 @@ def create_app():
     app.config.from_envvar('WATCHER_CONFIG')
 
     extension.init_app(app)
+    renderer.init_app(app)
     views.init_app(app)
+
+    @app.errorhandler(Exception)
+    def error_handler(error):
+        return (render_template('error.html', error=error), error.code)
 
     @app.route('/')
     def index():
-        return redirect(url_for('alerts.index'))
+        return render_template('base.html')
 
     if app.debug:
         @app.route('/flash')

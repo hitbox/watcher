@@ -2,18 +2,24 @@
 
 
 {% block main %}
-<h3>{{ table.model.__name__ }} Objects</h3>
-<p>All paths referenced are located on the GFSWEB03 machine.</p>
-<table>
-    <thead>
-        <tr>{% for column in table.columns %}
-            <th>{{ column.header }}</th>{% endfor %}
-        </tr>
-    </thead>
-    <tbody>{% for instance in instances %}
-        <tr>{% for column in table.columns %}
-            <td>{{ column.valueof(instance) }}</td>
-        {% endfor %}</tr>
-    {% endfor %}</tbody>
-</table>
+    <div class="container">
+        <h3>{{ table.model.__name__ }} Objects</h3>
+        {# filter form #}
+        <form method="POST">{{ render_form(form) }}</form>
+        <p>All paths referenced are located on the GFSWEB03 machine.</p>
+        {% if query is defined %}<pre>{{ query }}</pre>{% endif %}
+    </div>
+
+    <table>
+        <thead>
+            <tr>{% for column in table.columns %}
+                <th>{{ column.header }}</th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>{% for instance in instances %}
+                <tr data-href="{{ url_for('alerts.edit', id=instance.id) }}">{% for column in table.columns %}
+                        <td>{{ column.valueof(instance) }}</td>
+                    {% endfor %}</tr>
+            {% endfor %}</tbody>
+    </table>
 {% endblock %}

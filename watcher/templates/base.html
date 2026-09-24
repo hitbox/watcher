@@ -2,28 +2,32 @@
 <html translate="no">{% set title = 'Watcher' %}
     <head>{% block head %}
         <title>{{ title }}</title>
+        <meta name="color-scheme" content="light dark">
         <meta name=google content=notranslate>
         <meta name=viewport content="width=device-width, initial-scale=1.0">
         <link rel="icon" href="data:,">
         <link rel="stylesheet" href="{{ url_for('static', filename='base.css') }}">
-        <script src="{{ url_for('static', filename='site.js') }}"></script>
+        <link rel="stylesheet" href="{{ url_for('static', filename='pico.orange.min.css') }}">
+        <script src="{{ url_for('static', filename='watcher.js') }}"></script>
     {% endblock %}</head>
     <body>{% block body %}
+        <nav class="container">
+            <ul>
+                <li><strong>Watcher</strong></li>
+            </ul>
+            <ul>{% for link in navigation %}
+                <li>{{ link.render() }}</li>{% endfor %}
+            </ul>
+        </nav>
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
-                <div class="flashes-container">
+                <div class="container">
                     <ul class="flashes">{% for category, message in messages %}
                         <li class="flash flash-{{ category }}">{{ message }}</li>
                     {% endfor %}</ul>
                 </div>
             {% endif %}
         {% endwith %}
-        <div id=main-container>
-            <main>
-                <h1>Watcher</h1>
-                <p>Collect statistics on paths and alert for conditions.</p>
-                {% block main %}{% endblock main %}
-            </main>
-        </div>
+        <main>{% block main %}{% endblock main %}</main>
     {% endblock body %}</body>
 </html>

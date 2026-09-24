@@ -1,6 +1,8 @@
+alembic
 concurrent-log-handler
 flask
 flask-sqlalchemy
+flask-wtf
 humanize
 psycopg
 sqlalchemy
